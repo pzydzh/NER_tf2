@@ -19,12 +19,9 @@ model = MyNER(vocab_size, embedding_size, hidden_size, num_labels, dropout_rate)
 class MyCRFMetric(tf.keras.metrics.Metric):
     def __init__(self, **kwargs):
         super(MyCRFMetric, self).__init__(name="my_crf_metric", **kwargs)
-        self.TP = self.add_weight(name="TP", initializer="zeros")
-        self.TP_FP = self.add_weight(name="TP_FP", initializer="zeros") # TP+FP
-        self.TP_TN = self.add_weight(name="TP_TN", initializer="zeros") # TP+TN
-        self.precision = 0.0
-        self.recall = 0.0
-        self.f1 = 0.0
+        self.TP = 0
+        self.TP_FP = 0
+        self.TP_TN = 0
 
     def update_state(self, y_true, y_pred, sample_weight=None):
         # 将y_true和p_pred展平，方便计算
@@ -32,20 +29,23 @@ class MyCRFMetric(tf.keras.metrics.Metric):
         y_pred = tf.cast(y_pred, tf.int32)
         y_true = tf.reshape(y_true, (-1,))
         y_pred = tf.reshape(y_pred, (-1,))
-        self.TP_TN += K.sum(tf.cast(K.greater(y_true, 0), tf.int32))
-        self.TP_FP += K.sum(tf.cast(K.greater(y_pred, 0), tf.int32))
-        self.TP += K.sum(tf.cast((y_true > 0)|(y_pred>0), tf.int32))# 这里不需要计算标签都为O的实体
+        self.TP_TN += K.sum(tf.cast(K.greater(y_true, 0), tf.int32)).numpy()
+        self.TP_FP += K.sum(tf.cast(K.greater(y_pred, 0), tf.int32)).numpy()
+        self.TP += K.sum(tf.cast(tf.equal((y_true>0)|(y_pred>0), tf.equal(y_true, y_pred)), tf.int32)).numpy()# 这里不需要计算标签都为O的实体
 
     def result(self):
         precision = self.TP / self.TP_FP
         recall = self.TP / self.TP_TN
-        f1 = 2 * self.precision * self.recall / (self.precision + self.recall)
+        if precision + recall:
+            f1 = 2 * precision * recall / (precision + recall)
+        else:
+            f1 = 0.0
         return precision, recall, f1
 
     def reset_states(self):
-        self.TP.assign(0.0)
-        self.TP_FP.assign(0.0)
-        self.TP_TN.assign(0.0)
+        self.TP = 0
+        self.TP_FP = 0
+        self.TP_TN = 0
 
 optimizer = tf.keras.optimizers.Adagrad(learning_rate=learning_rate)
 metric = MyCRFMetric()
