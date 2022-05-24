@@ -19,17 +19,17 @@ class MyNER(tf.keras.Model):
         self.transition_params = tf.Variable(tf.random.uniform(shape=(num_labels, num_labels)))
 
     @tf.function
-    def call(self, inputs, attention_mask, label, training=None):
+    def call(self, inputs, input_lengths, label, training=None):
         output = self.embedding(inputs)
-        output = self.dropout(output, training=training)
         output = self.bi_lstm(output)
+        output = self.dropout(output, training=training)
         logits = self.dense(output)
 
         target_label = tf.convert_to_tensor(label, dtype=tf.int32)
-        input_length = tf.math.count_nonzero(attention_mask, 1)
+        # input_length = tf.math.count_nonzero(attention_mask, 1)
         log_likelihood, self.transition_params = crf_log_likelihood(logits,
                                                                     target_label,
-                                                                    input_length,
+                                                                    input_lengths,
                                                                     transition_params=self.transition_params)
         return logits, log_likelihood, self.transition_params
 

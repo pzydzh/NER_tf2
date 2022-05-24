@@ -12,7 +12,6 @@ from data_helper import train_data
 from config import vocab_size, embedding_size, hidden_size, num_labels, dropout_rate
 from tensorflow_addons.text.crf import crf_decode
 
-train_data = tf.data.Dataset.from_tensor_slices(train_data).shuffle(5000).batch(batch_size)
 
 model = MyNER(vocab_size, embedding_size, hidden_size, num_labels, dropout_rate)
 
@@ -50,20 +49,24 @@ class MyCRFMetric(tf.keras.metrics.Metric):
 optimizer = tf.keras.optimizers.Adagrad(learning_rate=learning_rate)
 metric = MyCRFMetric()
 for epoch in range(epochs):
-    for step, batch in tqdm(train_data.enumerate()):
-        inputs, attention_mask, label = batch
-        input_length = tf.math.count_nonzero(attention_mask, 1)
+    for step, batch in tqdm(train_data.shuffle(5000).batch(batch_size).enumerate()):
+        inputs, attention_mask, input_lengths, label = batch
         with tf.GradientTape() as tape:
-            logits, log_likelihood, transition_params = model(inputs, attention_mask, label, training=True)
+            logits, log_likelihood, transition_params = model(inputs,
+                                                              input_lengths,
+                                                              label,
+                                                              training=True)
             loss = -tf.reduce_mean(log_likelihood)
-        variable = model.transition_params
+            print(f"loss: {loss}")
+        variable = model.trainable_variables
+        # variable = [var for var in variable if "pooler" not in var.name]
         gradients = tape.gradient(loss, variable)
         optimizer.apply_gradients(zip(gradients, variable))
-        if step % 100 == 0 and step != 0:
-            batch_pred_sequence, _ = crf_decode(logits, transition_params, input_length)
-            metric.update_state(label, batch_pred_sequence)
-            precision, recall, f1 = metric.result()
-            print(f"precision: {precision}, recall: {recall}, f1: {f1}")
+        # if step % 100 == 0 and step != 0:
+        batch_pred_sequence, _ = crf_decode(logits, transition_params, input_lengths)
+        metric.update_state(label, batch_pred_sequence)
+        precision, recall, f1 = metric.result()
+        print(f"precision: {precision}, recall: {recall}, f1: {f1}")
     # 这里添加验证数据进行验证
     metric.reset_states()
 

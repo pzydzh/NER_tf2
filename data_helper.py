@@ -6,8 +6,10 @@
 from config import train_data_path, label2id, pretrained_model_path
 from transformers import AutoTokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
+import tensorflow as tf
 
-def load_data(path):
+
+def load_data(path, max_len = 500):
     """
 
     :param path:
@@ -17,40 +19,47 @@ def load_data(path):
     with open(path, "r", encoding="utf-8") as f:
         sentences = f.read().split("\n\n")
         for sentence in sentences:
-            tokens, tags = [], []
+            sent, labels = "", []
             for item in sentence.split("\n"):
-                token, tag = item.split("\t")
-                tokens.append(token)
-                tags.append(label2id[tag])
-            all_sentences.append("".join(tokens))
-            all_labels.append(tags)
+                char, tag = item.split("\t")
+                sent += char
+                labels.append(label2id[tag])
+                assert len(labels) == len(sent)
+            if len(sent) > max_len:
+                sent = sent[:max_len]
+                labels = labels[:max_len]
+            all_sentences.append(sent)
+            all_labels.append(labels)
     return all_sentences, all_labels
 
-def get_features(data, max_seq_len=128):
+
+def get_features(data):
     """
     将text转换成toke id。这里通过transformers中的tokenizer来实现
     :param data:
     :return:
     """
-    tokenizer = AutoTokenizer.from_pretrained(pretrained_model_path)
     sentences, labels = data
-    all_input_ids, all_attention_mask, all_labels = [], [], []
-    max_len = 0
-    for i in range(len(sentences)):
-        label = labels[i]
-        if len(sentences[i]) > max_len:
-            max_len = len(sentences[i])
-        max_len = min(max_len, max_seq_len)
-        tokens = tokenizer.encode_plus(sentences[i])
-        all_input_ids.append(tokens["input_ids"])
-        all_attention_mask.append(tokens["attention_mask"])
-        all_labels.append([0] + label + [0]) # 在label首尾各添加一个O标签，对应CLS和SEP符号
-    all_input_ids = pad_sequences(all_input_ids, padding='post')
-    all_attention_mask = pad_sequences(all_attention_mask, padding="post")
-    all_labels = pad_sequences(all_labels, padding="post")
-    return all_input_ids, all_attention_mask, all_labels
+    tokenizer = AutoTokenizer.from_pretrained(pretrained_model_path)
+    token_ids = tokenizer(sentences)
+    input_ids, token_type_ids, attention_mask = token_ids["input_ids"], token_ids["token_type_ids"], token_ids["attention_mask"]
+    labels = [[0]+_+[0] for _ in labels]
+    input_ids = pad_sequences(input_ids, padding="post")
+    token_type_ids = pad_sequences(token_type_ids, padding="post")
+    attention_mask = pad_sequences(attention_mask, padding="post")
+    # input_lengths = tf.math.count_nonzero(attention_mask, 1) # 记录每个句子的长度
+    input_lengths = attention_mask.sum(axis=(1))
+    labels = pad_sequences(labels, padding="post")
+    print(type(input_ids))
+    print(type(attention_mask))
+    print(type(input_lengths))
+    print(type(labels))
+    data = tf.data.Dataset.from_tensor_slices((input_ids, attention_mask, input_lengths, labels))
+
+    return data
 
 
 train_data = load_data(train_data_path)
 train_data = get_features(train_data)
+
 
